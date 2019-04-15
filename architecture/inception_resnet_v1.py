@@ -156,8 +156,8 @@ def inference(images, keep_probability, phase_train=True,
 
 
 def inception_resnet_v1(inputs, is_training=True,
-                        dropout_keep_prob=0.8,
-                        bottleneck_layer_size=128,
+                        dropout_keep_prob=0.5,
+                        bottleneck_layer_size=256,
                         reuse=None,
                         scope='InceptionResnetV1'):
     """Creates the Inception Resnet V1 model.

@@ -18,10 +18,31 @@ from tf_graph import FaceRecGraph
 import argparse
 import sys
 import json
+import csv
 import time
 import numpy as np
+import datetime
+import pyrebase
+import datetime
+now = datetime.datetime.now()
+config = {
+  "apiKey": "AIzaSyAK1iztrB4nrYXQaw6xBgi2D1t4ID9gfYY",
+  "authDomain": "facialrecognition-b1916.firebaseapp.com",
+  "databaseURL": "https://facialrecognition-b1916.firebaseio.com",
+  "storageBucket": "facialrecognition-b1916.appspot.com"
+}
+firebase = pyrebase.initialize_app(config)
+# Get a reference to the auth service
+auth = firebase.auth()
+email = "robertcook.rdc@gmail.com"
+password = "General2012"
+#auth.create_user_with_email_and_password(email, password)
+# Log the user in
+user = auth.sign_in_with_email_and_password("robertcook.rdc@gmail.com", "General2012")
+db = firebase.database()
 
 TIMEOUT = 10 #10 seconds
+currentDT = datetime.datetime.now()
 
 def main(args):
     mode = args.mode
@@ -33,13 +54,13 @@ def main(args):
         raise ValueError("Unimplemented mode")
 '''
 Description:
-Images from Video Capture -> detect faces' regions -> crop those faces and align them 
-    -> each cropped face is categorized in 3 types: Center, Left, Right 
+Images from Video Capture -> detect faces' regions -> crop those faces and align them
+    -> each cropped face is categorized in 3 types: Center, Left, Right
     -> Extract 128D vectors( face features)
-    -> Search for matching subjects in the dataset based on the types of face positions. 
+    -> Search for matching subjects in the dataset based on the types of face positions.
     -> The preexisitng face 128D vector with the shortest distance to the 128D vector of the face on screen is most likely a match
     (Distance threshold is 0.6, percentage threshold is 70%)
-    
+
 '''
 def camera_recog():
     print("[INFO] camera sensor warming up...")
@@ -48,7 +69,7 @@ def camera_recog():
     while True:
         _,frame = vs.read();
         #u can certainly add a roi here but for the sake of a demo i'll just leave it as simple as this
-        rects, landmarks = face_detect.detect_face(frame,80);#min face size is set to 80x80
+        rects, landmarks = face_detect.detect_face(frame,20);#min face size is set to 80x80
         aligns = []
         positions = []
 
@@ -57,11 +78,13 @@ def camera_recog():
             if len(aligned_face) == 160 and len(aligned_face[0]) == 160:
                 aligns.append(aligned_face)
                 positions.append(face_pos)
-            else: 
-                print("Align face failed") #log        
+            else:
+                print("Align face failed") #log
         if(len(aligns) > 0):
             features_arr = extract_feature.get_features(aligns)
             recog_data = findPeople(features_arr,positions)
+
+
             for (i,rect) in enumerate(rects):
                 cv2.rectangle(frame,(rect[0],rect[1]),(rect[2],rect[3]),(255,0,0)) #draw bounding box for the face
                 cv2.putText(frame,recog_data[i][0]+" - "+str(recog_data[i][1])+"%",(rect[0],rect[1]),cv2.FONT_HERSHEY_SIMPLEX,1,(255,255,255),1,cv2.LINE_AA)
@@ -70,7 +93,10 @@ def camera_recog():
         cv2.imshow("Frame",frame)
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
+
+
             break
+
 '''
 facerec_128D.txt Data Structure:
 {
@@ -80,10 +106,10 @@ facerec_128D.txt Data Structure:
     "Right": [[128D Vector]]
     }
 }
-This function basically does a simple linear search for 
+This function basically does a simple linear search for
 ^the 128D vector with the min distance to the 128D vector of the face on screen
 '''
-def findPeople(features_arr, positions, thres = 0.6, percent_thres = 70):
+def findPeople(features_arr, positions, thres = 0.6, percent_thres = 60):
     '''
     :param features_arr: a list of 128d Features of all faces on screen
     :param positions: a list of face position types of all faces on screen
@@ -93,6 +119,8 @@ def findPeople(features_arr, positions, thres = 0.6, percent_thres = 70):
     f = open('./facerec_128D.txt','r')
     data_set = json.loads(f.read());
     returnRes = [];
+
+
     for (i,features_128D) in enumerate(features_arr):
         result = "Unknown";
         smallest = sys.maxsize
@@ -103,23 +131,44 @@ def findPeople(features_arr, positions, thres = 0.6, percent_thres = 70):
                 if(distance < smallest):
                     smallest = distance;
                     result = person;
+
         percentage =  min(100, 100 * thres / smallest)
         if percentage <= percent_thres :
             result = "Unknown"
         returnRes.append((result,percentage))
-    return returnRes    
+    #print(result)
+    test = now.strftime("%Y-%m-%d %H:%M")
+    db.child("users").child(result).update({"Date": test})
+    return returnRes
+
+
+
+
+def register(result):
+    ts = time.time()
+    Date = datetime.datetime.fromtimestamp(ts).strftime('%Y-%m-%d')
+    Time = datetime.datetime.fromtimestamp(ts).strftime('%H:%M:%S')
+    row = [result, Date, Time]
+    with open('StudentDetails\StudentDetails.csv', 'a+') as csvFile:
+        writer = csv.writer(csvFile, delimiter=',')
+        writer.writerow(row)
+        csvFile.close()
+
 
 '''
 Description:
-User input his/her name or ID -> Images from Video Capture -> detect the face -> crop the face and align it 
-    -> face is then categorized in 3 types: Center, Left, Right 
+User input his/her name or ID -> Images from Video Capture -> detect the face -> crop the face and align it
+    -> face is then categorized in 3 types: Center, Left, Right
     -> Extract 128D vectors( face features)
     -> Append each newly extracted face 128D vector to its corresponding position type (Center, Left, Right)
     -> Press Q to stop capturing
     -> Find the center ( the mean) of those 128D vectors in each category. ( np.mean(...) )
     -> Save
-    
+
 '''
+
+
+
 def create_manual_data():
     vs = cv2.VideoCapture(0); #get input from webcam
     print("Please input new user ID:")
@@ -131,14 +180,13 @@ def create_manual_data():
     print("Please start turning slowly. Press 'q' to save and add this new user to the dataset");
     while True:
         _, frame = vs.read();
-        rects, landmarks = face_detect.detect_face(frame, 80);  # min face size is set to 80x80
+        rects, landmarks = face_detect.detect_face(frame, 20);  # min face size is set to 80x80
         for (i, rect) in enumerate(rects):
             aligned_frame, pos = aligner.align(160,frame,landmarks[:,i]);
             if len(aligned_frame) == 160 and len(aligned_frame[0]) == 160:
                 person_imgs[pos].append(aligned_frame)
                 cv2.imshow("Captured face", aligned_frame)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     for pos in person_imgs: #there r some exceptions here, but I'll just leave it as this to keep it simple
